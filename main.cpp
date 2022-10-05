@@ -4,14 +4,14 @@
 
 int main () { 
 
-    stack stk = StackCtor(-1000);
+    stack_t stk = StackCtor(-1);
 
     for (int i = 0; i < 10; i++) {
-        Push(stk, i);
+        StackPush(stk, i);
     }
 
     for (int i = 0; i < 10; i++) {
-        printf("%d ", Pop(stk));
+        printf("%d ", StackPop(stk));
     }
 
     StackDtor(stk);

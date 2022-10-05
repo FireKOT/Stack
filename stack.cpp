@@ -7,28 +7,31 @@
 #include "config.h"
 
 
-const unsigned long CANARY = 0xDEADBABE;
-const elem_t        POISON = 0xADADADAD;
+static const unsigned long CANARY = 0xDEADBABE;
+static const elem_t        POISON = 0xADADADAD;
 
 
 struct stack_prot {
 
-    unsigned long StartBird;
+    unsigned long StartBird = 0;
 
-    elem_t *values;
+    elem_t *values = nullptr;
 
-    size_t size;
-    size_t capacity;
+    size_t size = 0;
+    size_t capacity = 0;
     
-    double factor;
+    double factor = 0;
 
-    unsigned long long StackHash;
+    int isdump = false;
+
+    unsigned long long StackHash = 0;
 
     unsigned long EndBird;
 };
 
 
 static int  GetCode            ();
+
 static void SetBirds           (void *mas, size_t size);
 static void ResizeUp           (stack_prot *stk);
 static void ResizeDown         (stack_prot *stk);
@@ -39,6 +42,19 @@ static void StackDump          (stack_prot *stk, char err);
 static unsigned long long pow  (unsigned long long n, int k);
 static unsigned long long hash (stack_prot *test);
 
+
+#define PROTECTION
+
+#ifdef PROTECTION
+    #define CHECK(stk) {                \
+        char err = StackOK(stk);        \
+        if(err) StackDump(stk, err);    \
+    }
+    #define PROT(...) __VA_ARGS__
+#else
+    #define CHECK(...)  
+    #define PROT(...)   
+#endif
 
 static const int CODE = GetCode();
 
@@ -54,14 +70,16 @@ static int GetCode () {
 
 int StackCtor (size_t base_size) {
 
+    RET_ON_VAL(base_size > sizeof(size_t) / sizeof(elem_t) - 10 * sizeof(CANARY), ERR_ARG_INVAL, -1);
+
     elem_t *values = (elem_t*) calloc(base_size*sizeof(elem_t) + 2*sizeof(CANARY), 1);
-    assert(!IsBadReadPtr(values, _msize(values)));
+    RET_ON_VAL(IsBadReadPtr(values, _msize(values)), ERR_NULL_PTR, -1);
 
     SetBirds(values, base_size);
     FillbyPoison((elem_t*) ((char*)values + sizeof(CANARY)), base_size);
 
     stack_prot *stk = (stack_prot*) calloc(1, sizeof(stack_prot));
-    assert(!IsBadReadPtr(stk, _msize(stk)));
+    RET_ON_VAL(IsBadReadPtr(stk, _msize(stk)), ERR_NULL_PTR, -1);
 
     stk->StartBird = CANARY;
 
@@ -72,11 +90,13 @@ int StackCtor (size_t base_size) {
 
     stk->factor = 2.0;
 
+    stk->isdump = false;
+
     stk->StackHash = 0;
 
     stk->EndBird = CANARY;
 
-    stk->StackHash = hash(stk);
+    PROT(stk->StackHash = hash(stk));
 
     FILE *dump = fopen("dump.txt", "w");
     assert(dump);
@@ -84,8 +104,7 @@ int StackCtor (size_t base_size) {
 
     int code = ((int) stk)^CODE;
 
-    char err = StackOK(stk);
-    if(err) StackDump(stk, err);
+    CHECK(stk);
 
     return code;
 }
@@ -98,53 +117,48 @@ static void SetBirds (void *mas, size_t size) {
     *((unsigned long*) ((char*)mas + size*sizeof(elem_t) + sizeof(CANARY))) = CANARY;
 }
 
-int Push (stack vstk, elem_t value) {
+int StackPush (stack_t vstk, elem_t value) {
 
     stack_prot *stk = (stack_prot*) (vstk^CODE);
-    char err = StackOK(stk);
-    if(err) StackDump(stk, err);
+    CHECK(stk);
 
     stk->values[stk->size] = value;
     stk->size++;
 
-    stk->StackHash = hash(stk);
+    PROT(stk->StackHash = hash(stk));
 
     if (stk->size >= stk->capacity) {
         ResizeUp(stk);
     }
 
-    err = StackOK(stk);
-    if(err) StackDump(stk, err);
+    CHECK(stk);
 
     return 0;
 }
 
-elem_t Pop (stack vstk) {
+elem_t StackPop (stack_t vstk) {
 
     stack_prot *stk = (stack_prot*) (vstk^CODE);
-    char err = StackOK(stk);
-    if(err) StackDump(stk, err);
+    CHECK(stk);
 
     stk->size--;
     elem_t value = stk->values[stk->size];
     stk->values[stk->size] = POISON;
 
-    stk->StackHash = hash(stk);
+    PROT(stk->StackHash = hash(stk));
 
     if (stk->size <= stk->capacity / (stk->factor*stk->factor)) {
         ResizeDown(stk);
     }
     
-    err = StackOK(stk);
-    if(err) StackDump(stk, err);
+    CHECK(stk);
 
     return value;
 }
 
 static void ResizeUp (stack_prot *stk) {
 
-    char err = StackOK(stk);
-    if(err) StackDump(stk, err);
+    CHECK(stk);
 
     elem_t *tmp = (elem_t*) realloc((char*)stk->values - sizeof(CANARY),\
                                     (size_t) (stk->capacity*stk->factor*sizeof(elem_t)) + 2*sizeof(CANARY));
@@ -155,16 +169,14 @@ static void ResizeUp (stack_prot *stk) {
     stk->values = (elem_t*) ((char*)tmp + sizeof(CANARY));
     stk->capacity = (size_t) (stk->capacity * stk->factor);
 
-    stk->StackHash = hash(stk);
+    PROT(stk->StackHash = hash(stk));
 
-    err = StackOK(stk);
-    if(err) StackDump(stk, err);
+    CHECK(stk);
 }
 
 static void ResizeDown (stack_prot *stk) {
 
-    char err = StackOK(stk);
-    if(err) StackDump(stk, err);
+    CHECK(stk);
 
     elem_t *tmp = (elem_t*) realloc((char*)stk->values - sizeof(CANARY),\
                                     (size_t) (stk->capacity/stk->factor*sizeof(elem_t)) + 2*sizeof(CANARY));
@@ -173,10 +185,9 @@ static void ResizeDown (stack_prot *stk) {
     stk->values = (elem_t*) ((char*)tmp + sizeof(CANARY));
     stk->capacity = (size_t) (stk->capacity / stk->factor);
 
-    stk->StackHash = hash(stk);
+    PROT(stk->StackHash = hash(stk));
 
-    err = StackOK(stk);
-    if(err) StackDump(stk, err);
+    CHECK(stk);
 }
 
 static void FillbyPoison (elem_t *start, size_t size) {
@@ -226,9 +237,9 @@ static void SetErr (char *err, size_t num) {
 
 static void StackDump (stack_prot *stk, char err) {
 
-    FILE *dump = fopen("dump.txt", "a");
+    stk->isdump = true;
 
-    fprintf(dump, "<<------------------------------->>\n");
+    FILE *dump = fopen("dump.txt", "a");
 
     fprintf(dump, "Errors:\n");
     for (size_t i = 0; i < sizeof(err) * 8; i++) {
@@ -241,24 +252,35 @@ static void StackDump (stack_prot *stk, char err) {
     fprintf(dump, "\n");
 
     fprintf(dump, "Stack:\n");
-    fprintf(dump, "StartBird: %ld\n", stk->StartBird);
-    fprintf(dump, "values: %p\n", stk->values);
-    fprintf(dump, "size: %d\n", stk->size);
-    fprintf(dump, "capacity: %d\n", stk->capacity);
-    fprintf(dump, "factor: %lg\n", stk->factor);
-    fprintf(dump, "hash: %llu\n", stk->StackHash);
-    fprintf(dump, "EndBird: %ld\n", stk->EndBird);
+    fprintf(dump, "StartBird:  %ld\n", stk->StartBird);
+    fprintf(dump, "values ptr: %p\n", stk->values);
+    fprintf(dump, "size:       %d\n", stk->size);
+    fprintf(dump, "capacity:   %d\n", stk->capacity);
+    fprintf(dump, "factor:     %lg\n", stk->factor);
+    fprintf(dump, "hash:       %lu\n", stk->StackHash);
+    fprintf(dump, "EndBird:    %ld\n", stk->EndBird);
+    fprintf(dump, "\n");
+
+    fprintf(dump, "Values of Stack:\n");
+    for (size_t i = 0; i < stk->capacity; i++) {
+        if(stk->values[i] != POISON) {
+            fprintf(dump, "%d ", stk->values[i]);
+        }
+        else {
+            fprintf(dump, "POISON ");
+        }
+    }
+    fprintf(dump, "\n");
 
     fprintf(dump, "<<------------------------------->>\n\n");
 
     fclose(dump);
 }
 
-void StackDtor (stack vstk) {
+void StackDtor (stack_t vstk) {
 
     stack_prot *stk = (stack_prot*) (vstk^CODE);
-    char err = StackOK(stk);
-    if(err) StackDump(stk, err);
+    CHECK(stk);
 
     free((char*) stk->values - sizeof(CANARY));
     free(stk);

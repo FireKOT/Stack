@@ -1,9 +1,9 @@
-#ifndef __STACK
-#define __STACK
+#ifndef __STACK_H
+#define __STACK_H
 
 
 typedef int elem_t;
-typedef int stack;
+typedef int stack_t;
 
 
 enum STACK_ERR {
@@ -15,10 +15,10 @@ enum STACK_ERR {
 };
 
 
-int StackCtor  (size_t base_size = 1024);
-int Push       (stack vstk, elem_t value);
-elem_t Pop     (stack vstk);
-void StackDtor (stack vstk);
+int    StackCtor (size_t base_size = 1024);
+int    StackPush (stack_t vstk, elem_t value);
+elem_t StackPop  (stack_t vstk);
+void   StackDtor (stack_t vstk);
 
 
 #endif
